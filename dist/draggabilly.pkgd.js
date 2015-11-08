@@ -2018,7 +2018,7 @@ Draggabilly.prototype._getPosition = function() {
   var x = parseInt( style.left, 10 );
   if(this.rightSide)
     x = - parseInt( style.right, 10 );
-  
+
   var y = parseInt( style.top, 10 );
   if(this.bottomSide)
     y = - parseInt( style.bottom, 10 );
@@ -2309,12 +2309,12 @@ Draggabilly.prototype.destroy = function() {
   if(this.leftSide)
     this.element.style.left = '';
   else
-    this.element.style.right = ''; 
+    this.element.style.right = '';
 
   if(this.topSide)
     this.element.style.top = '';
   else
-    this.element.style.bottom = ''; 
+    this.element.style.bottom = '';
 
   this.element.style.position = '';
   // unbind handles
