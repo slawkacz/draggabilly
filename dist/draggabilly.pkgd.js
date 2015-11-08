@@ -1,5 +1,5 @@
 /*!
- * Draggabilly PACKAGED v1.2.4
+ * Draggabilly PACKAGED v1.2.5
  * Make that shiz draggable
  * http://draggabilly.desandro.com
  * MIT license
@@ -629,7 +629,7 @@ if ( typeof define === 'function' && define.amd ) {
  */
 
 ;(function () {
-    
+    'use strict';
 
     /**
      * Class for managing events.
@@ -1104,7 +1104,7 @@ if ( typeof define === 'function' && define.amd ) {
 /*global define: false, module: false, require: false */
 
 ( function( window, factory ) {
-  
+  'use strict';
   // universal module definition
 
   if ( typeof define == 'function' && define.amd ) {
@@ -1412,7 +1412,7 @@ return Unipointer;
 }));
 
 /*!
- * Unidragger v1.1.0
+ * Unidragger v1.1.6
  * Draggable base class
  * MIT license
  */
@@ -1421,7 +1421,7 @@ return Unipointer;
 
 ( function( window, factory ) {
   /*global define: false, module: false, require: false */
-  
+  'use strict';
   // universal module definition
 
   if ( typeof define == 'function' && define.amd ) {
@@ -1462,15 +1462,6 @@ function preventDefaultEvent( event ) {
     event.preventDefault();
   } else {
     event.returnValue = false;
-  }
-}
-
-function getParentLink( elem ) {
-  while ( elem != document.body ) {
-    elem = elem.parentNode;
-    if ( elem.nodeName == 'A' ) {
-      return elem;
-    }
   }
 }
 
@@ -1555,19 +1546,20 @@ var disableImgOndragstart = !isIE8 ? noop : function( handle ) {
 
 // ----- start event ----- //
 
-var allowTouchstartNodes = Unidragger.allowTouchstartNodes = {
-  INPUT: true,
-  A: true,
-  BUTTON: true,
-  SELECT: true
-};
-
 /**
  * pointer start
  * @param {Event} event
  * @param {Event or Touch} pointer
  */
 Unidragger.prototype.pointerDown = function( event, pointer ) {
+  // dismiss range sliders
+  if ( event.target.nodeName == 'INPUT' && event.target.type == 'range' ) {
+    // reset pointerDown logic
+    this.isPointerDown = false;
+    delete this.pointerIdentifier;
+    return;
+  }
+
   this._dragPointerDown( event, pointer );
   // kludge to blur focused inputs in dragger
   var focused = document.activeElement;
@@ -1576,6 +1568,10 @@ Unidragger.prototype.pointerDown = function( event, pointer ) {
   }
   // bind move and end events
   this._bindPostStartEvents( event );
+  // track scrolling
+  this.pointerDownScroll = Unidragger.getScrollPosition();
+  eventie.bind( window, 'scroll', this );
+
   this.emitEvent( 'pointerDown', [ event, pointer ] );
 };
 
@@ -1584,12 +1580,10 @@ Unidragger.prototype._dragPointerDown = function( event, pointer ) {
   // track to see when dragging starts
   this.pointerDownPoint = Unipointer.getPointerPoint( pointer );
 
+  // prevent default, unless touchstart or <select>
+  var isTouchstart = event.type == 'touchstart';
   var targetNodeName = event.target.nodeName;
-  // HACK iOS, allow clicks on buttons, inputs, and links, or children of links
-  var isTouchstartNode = event.type == 'touchstart' &&
-    ( allowTouchstartNodes[ targetNodeName ] || getParentLink( event.target ) );
-  // do not prevent default on touchstart nodes or <select>
-  if ( !isTouchstartNode && targetNodeName != 'SELECT' ) {
+  if ( !isTouchstart && targetNodeName != 'SELECT' ) {
     preventDefaultEvent( event );
   }
 };
@@ -1648,6 +1642,10 @@ Unidragger.prototype._dragPointerUp = function( event, pointer ) {
   }
 };
 
+Unidragger.prototype.pointerDone = function() {
+  eventie.unbind( window, 'scroll', this );
+};
+
 // -------------------------- drag -------------------------- //
 
 // dragStart
@@ -1675,6 +1673,7 @@ Unidragger.prototype._dragMove = function( event, pointer, moveVector ) {
 };
 
 Unidragger.prototype.dragMove = function( event, pointer, moveVector ) {
+  preventDefaultEvent( event );
   this.emitEvent( 'dragMove', [ event, pointer, moveVector ] );
 };
 
@@ -1695,6 +1694,11 @@ Unidragger.prototype.dragEnd = function( event, pointer ) {
   this.emitEvent( 'dragEnd', [ event, pointer ] );
 };
 
+Unidragger.prototype.pointerDone = function() {
+  eventie.unbind( window, 'scroll', this );
+  delete this.pointerDownScroll;
+};
+
 // ----- onclick ----- //
 
 // handle all clicks and prevent clicks when dragging
@@ -1708,23 +1712,61 @@ Unidragger.prototype.onclick = function( event ) {
 
 // triggered after pointer down & up with no/tiny movement
 Unidragger.prototype._staticClick = function( event, pointer ) {
-  // allow click in text input
-  if ( event.target.nodeName == 'INPUT' && event.target.type == 'text' ) {
+  // ignore emulated mouse up clicks
+  if ( this.isIgnoringMouseUp && event.type == 'mouseup' ) {
+    return;
+  }
+
+  // allow click in <input>s and <textarea>s
+  var nodeName = event.target.nodeName;
+  if ( nodeName == 'INPUT' || nodeName == 'TEXTAREA' ) {
     event.target.focus();
   }
   this.staticClick( event, pointer );
+
+  // set flag for emulated clicks 300ms after touchend
+  if ( event.type != 'mouseup' ) {
+    this.isIgnoringMouseUp = true;
+    var _this = this;
+    // reset flag after 300ms
+    setTimeout( function() {
+      delete _this.isIgnoringMouseUp;
+    }, 400 );
+  }
 };
 
 Unidragger.prototype.staticClick = function( event, pointer ) {
   this.emitEvent( 'staticClick', [ event, pointer ] );
 };
 
-// -----  ----- //
+// ----- scroll ----- //
+
+Unidragger.prototype.onscroll = function() {
+  var scroll = Unidragger.getScrollPosition();
+  var scrollMoveX = this.pointerDownScroll.x - scroll.x;
+  var scrollMoveY = this.pointerDownScroll.y - scroll.y;
+  // cancel click/tap if scroll is too much
+  if ( Math.abs( scrollMoveX ) > 3 || Math.abs( scrollMoveY ) > 3 ) {
+    this._pointerDone();
+  }
+};
+
+// ----- utils ----- //
 
 Unidragger.getPointerPoint = function( pointer ) {
   return {
     x: pointer.pageX !== undefined ? pointer.pageX : pointer.clientX,
     y: pointer.pageY !== undefined ? pointer.pageY : pointer.clientY
+  };
+};
+
+var isPageOffset = window.pageYOffset !== undefined;
+
+// get scroll in { x, y }
+Unidragger.getScrollPosition = function() {
+  return {
+    x: isPageOffset ? window.pageXOffset : document.body.scrollLeft,
+    y: isPageOffset ? window.pageYOffset : document.body.scrollTop
   };
 };
 
@@ -1737,14 +1779,14 @@ return Unidragger;
 }));
 
 /*!
- * Draggabilly v1.2.4
+ * Draggabilly v1.2.5
  * Make that shiz draggable
  * http://draggabilly.desandro.com
  * MIT license
  */
 
 ( function( window, factory ) {
-  
+  'use strict';
 
   if ( typeof define == 'function' && define.amd ) {
     // AMD
@@ -1910,10 +1952,23 @@ Draggabilly.prototype._create = function() {
 
   // set relative positioning
   var style = getStyle( this.element );
+
   if ( style.position != 'relative' && style.position != 'absolute' ) {
     this.element.style.position = 'relative';
   }
+  if(style.right.indexOf('px') !== -1) {
+    this.rightSide = true;
+  }
+  else {
+    this.leftSide = true;
+  }
 
+  if(style.bottom.indexOf('px') !== -1) {
+    this.bottomSide = true;
+  }
+  else {
+    this.topSide = true;
+  }
   this.enable();
   this.setHandles();
 
@@ -1959,9 +2014,14 @@ Draggabilly.prototype.dispatchEvent = function( type, event, args ) {
 Draggabilly.prototype._getPosition = function() {
   // properties
   var style = getStyle( this.element );
-
+  
   var x = parseInt( style.left, 10 );
+  if(this.rightSide)
+    x = - parseInt( style.right, 10 );
+  
   var y = parseInt( style.top, 10 );
+  if(this.bottomSide)
+    y = - parseInt( style.bottom, 10 );
 
   // clean up 'auto' or other non-integer values
   this.position.x = isNaN( x ) ? 0 : x;
@@ -2037,7 +2097,7 @@ Draggabilly.prototype.dragStart = function( event, pointer ) {
   this.startPosition.x = this.position.x;
   this.startPosition.y = this.position.y;
   // reset left/top style
-  this.setLeftTop();
+  this.setPosition();
 
   this.dragPoint.x = 0;
   this.dragPoint.y = 0;
@@ -2102,7 +2162,6 @@ Draggabilly.prototype.dragMove = function( event, pointer, moveVector ) {
   // constrain to axis
   dragX = this.options.axis == 'y' ? 0 : dragX;
   dragY = this.options.axis == 'x' ? 0 : dragY;
-
   this.position.x = this.startPosition.x + dragX;
   this.position.y = this.startPosition.y + dragY;
   // set dragPoint properties
@@ -2156,7 +2215,7 @@ Draggabilly.prototype.dragEnd = function( event, pointer ) {
   // use top left position when complete
   if ( transformProperty ) {
     this.element.style[ transformProperty ] = '';
-    this.setLeftTop();
+    this.setPosition(); 
   }
   classie.remove( this.element, 'is-dragging' );
   this.dispatchEvent( 'dragEnd', event, [ pointer ] );
@@ -2188,17 +2247,39 @@ var translate = is3d ?
     return 'translate( ' + x + 'px, ' + y + 'px)';
   };
 
-// left/top positioning
-Draggabilly.prototype.setLeftTop = function() {
+Draggabilly.prototype.setPosition = function() {
+  if(this.leftSide)
+      this.setLeft();
+    else 
+      this.setRight(); 
+
+    if(this.topSide)
+      this.setTop();
+    else 
+      this.setBottom();
+};
+
+Draggabilly.prototype.setLeft = function() {
   this.element.style.left = this.position.x + 'px';
+};
+
+Draggabilly.prototype.setRight = function() {
+  this.element.style.right = -this.position.x + 'px';
+};
+
+Draggabilly.prototype.setTop = function() {
   this.element.style.top  = this.position.y + 'px';
+};
+
+Draggabilly.prototype.setBottom = function() {
+  this.element.style.bottom = -this.position.y + 'px';
 };
 
 Draggabilly.prototype.positionDrag = transformProperty ?
   function() {
     // position with transform
     this.element.style[ transformProperty ] = translate( this.dragPoint.x, this.dragPoint.y );
-  } : Draggabilly.prototype.setLeftTop;
+  } : Draggabilly.prototype.setPosition;
 
 // ----- staticClick ----- //
 
@@ -2225,8 +2306,16 @@ Draggabilly.prototype.destroy = function() {
   if ( transformProperty ) {
     this.element.style[ transformProperty ] = '';
   }
-  this.element.style.left = '';
-  this.element.style.top = '';
+  if(this.leftSide)
+    this.element.style.left = '';
+  else
+    this.element.style.right = ''; 
+
+  if(this.topSide)
+    this.element.style.top = '';
+  else
+    this.element.style.bottom = ''; 
+
   this.element.style.position = '';
   // unbind handles
   this.unbindHandles();

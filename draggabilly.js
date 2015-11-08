@@ -1,5 +1,5 @@
 /*!
- * Draggabilly v1.2.4
+ * Draggabilly v1.2.5
  * Make that shiz draggable
  * http://draggabilly.desandro.com
  * MIT license
@@ -172,10 +172,23 @@ Draggabilly.prototype._create = function() {
 
   // set relative positioning
   var style = getStyle( this.element );
+
   if ( style.position != 'relative' && style.position != 'absolute' ) {
     this.element.style.position = 'relative';
   }
+  if(style.right.indexOf('px') !== -1) {
+    this.rightSide = true;
+  }
+  else {
+    this.leftSide = true;
+  }
 
+  if(style.bottom.indexOf('px') !== -1) {
+    this.bottomSide = true;
+  }
+  else {
+    this.topSide = true;
+  }
   this.enable();
   this.setHandles();
 
@@ -221,9 +234,14 @@ Draggabilly.prototype.dispatchEvent = function( type, event, args ) {
 Draggabilly.prototype._getPosition = function() {
   // properties
   var style = getStyle( this.element );
-
+  
   var x = parseInt( style.left, 10 );
+  if(this.rightSide)
+    x = - parseInt( style.right, 10 );
+  
   var y = parseInt( style.top, 10 );
+  if(this.bottomSide)
+    y = - parseInt( style.bottom, 10 );
 
   // clean up 'auto' or other non-integer values
   this.position.x = isNaN( x ) ? 0 : x;
@@ -299,7 +317,7 @@ Draggabilly.prototype.dragStart = function( event, pointer ) {
   this.startPosition.x = this.position.x;
   this.startPosition.y = this.position.y;
   // reset left/top style
-  this.setLeftTop();
+  this.setPosition();
 
   this.dragPoint.x = 0;
   this.dragPoint.y = 0;
@@ -364,7 +382,6 @@ Draggabilly.prototype.dragMove = function( event, pointer, moveVector ) {
   // constrain to axis
   dragX = this.options.axis == 'y' ? 0 : dragX;
   dragY = this.options.axis == 'x' ? 0 : dragY;
-
   this.position.x = this.startPosition.x + dragX;
   this.position.y = this.startPosition.y + dragY;
   // set dragPoint properties
@@ -418,7 +435,7 @@ Draggabilly.prototype.dragEnd = function( event, pointer ) {
   // use top left position when complete
   if ( transformProperty ) {
     this.element.style[ transformProperty ] = '';
-    this.setLeftTop();
+    this.setPosition(); 
   }
   classie.remove( this.element, 'is-dragging' );
   this.dispatchEvent( 'dragEnd', event, [ pointer ] );
@@ -450,17 +467,39 @@ var translate = is3d ?
     return 'translate( ' + x + 'px, ' + y + 'px)';
   };
 
-// left/top positioning
-Draggabilly.prototype.setLeftTop = function() {
+Draggabilly.prototype.setPosition = function() {
+  if(this.leftSide)
+      this.setLeft();
+    else 
+      this.setRight(); 
+
+    if(this.topSide)
+      this.setTop();
+    else 
+      this.setBottom();
+};
+
+Draggabilly.prototype.setLeft = function() {
   this.element.style.left = this.position.x + 'px';
+};
+
+Draggabilly.prototype.setRight = function() {
+  this.element.style.right = -this.position.x + 'px';
+};
+
+Draggabilly.prototype.setTop = function() {
   this.element.style.top  = this.position.y + 'px';
+};
+
+Draggabilly.prototype.setBottom = function() {
+  this.element.style.bottom = -this.position.y + 'px';
 };
 
 Draggabilly.prototype.positionDrag = transformProperty ?
   function() {
     // position with transform
     this.element.style[ transformProperty ] = translate( this.dragPoint.x, this.dragPoint.y );
-  } : Draggabilly.prototype.setLeftTop;
+  } : Draggabilly.prototype.setPosition;
 
 // ----- staticClick ----- //
 
@@ -487,8 +526,16 @@ Draggabilly.prototype.destroy = function() {
   if ( transformProperty ) {
     this.element.style[ transformProperty ] = '';
   }
-  this.element.style.left = '';
-  this.element.style.top = '';
+  if(this.leftSide)
+    this.element.style.left = '';
+  else
+    this.element.style.right = ''; 
+
+  if(this.topSide)
+    this.element.style.top = '';
+  else
+    this.element.style.bottom = ''; 
+
   this.element.style.position = '';
   // unbind handles
   this.unbindHandles();
